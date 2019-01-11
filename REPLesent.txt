@@ -4,23 +4,23 @@ How to make ad hoc polymorphism less ad hoc
 
 ---
 
+| What are type classes?
+
+OO's big idea: bundling implementation and data is good 
+
+Typeclass's big idea: separating implementation from data is good.
+
+---
+
 | History and motivation
 
-Invented by Phil Wadler in '88 in the paper "how to make ad hoc polymorphism less ad hoc" to solve 2 problems for Haskell:
+Invented by Phil Wadler in '88 in the paper "how to make ad hoc polymorphism less ad hoc" to
+solve 2 problems for Haskell:
 
 * overloading equality operators
 
 * overloading numeric operators
 
----
-
-| What are type classes?
-
-Similar to interfaces, but
-
-- In OO, vtables/methods are bundled with data 
-
-- With typeclasses, they're deliberately separated
 
 ---
 
@@ -69,9 +69,10 @@ case class Baz() extends Foo
 val bar: Foo = Bar()
 val baz: Foo = Baz()
 import EqSyntax._
+
 ---
 
-| How does this differ from normal OO?
+| How does this differ from "normal" OO?
 
 * Retroactive extension of library code
 
@@ -87,10 +88,23 @@ import EqSyntax._
 
 ---
 
+| Retroactive extension of library code
+
+In OO, you can't make a library class extend a new interface.
+The best you can do is create a new subclass that implements the interface.
+
+However, the library won't return values of that subclass, so you'll need to
+do a lot of wrapping.
+
+With typeclasses, you can provide an implementation in the library that defines
+the new typeclass, or in your own application codebase.
+
+---
 | A brief digression: monoids
 
 
-In math, a Monoid is a set S, a closed binary associative operation *, and an identity element i
+In math, a Monoid is a set S, a closed binary associative operation *, 
+and an identity element i.
 
 Associative means (a + b) + c == a + (b + c)
 
@@ -116,6 +130,14 @@ object MonoidSyntax{
 
 ---
 
+| No need for data to have access to implementation
+
+```
+
+def foldM(list: List[A])(implicit m: Monoid[A]) =
+  list.fold(m.id)(_ <> _)
+---
+
 | Conditional implementation
 
 ```
@@ -126,22 +148,54 @@ object MonoidInstances {
     val <>(x: A => B, y: A => B) = a => <>(x(a), y(a))
   }
 
-  implicit def tupleMonoid[A, B](implicit aMonoid: Monoid[A], bMonoid: Monoid[B]) = new Monoid[(A, B)] {
-    val id = (id, id)
-    def <>(x: (A, B), y: (A, B)) = (x, y) match {
-      case ((xa, xb), (ya, yb)) => (<>(xa, ya), <>(xb, yb))
+  implicit def tupleMonoid[A, B](implicit aMonoid: Monoid[A], bMonoid: Monoid[B]) = 
+    new Monoid[(A, B)] {
+      val id = (id, id)
+      def <>(x: (A, B), y: (A, B)) = (x, y) match {
+        case ((xa, xb), (ya, yb)) => (<>(xa, ya), <>(xb, yb))
+      }
     }
-  }
 }
 
 ---
 
 | Polymorphic values
 
+---
+
+| Naive OO Monoid trait
+
+```
+trait Monoid {
+  val id: Monoid
+  def <>(other:Monoid): Monoid
+}
+
+case class MyString(s: String) extends Monoid {
+  val id: Monoid = MyString("")
+  def <>(other:Monoid): Monoid =
+    other match {
+      case MyString(s2) => MyString(s + s2)
+      case _ => throw new Exception("expected another MyString in <>")
+    }
+}
+
+// Problem: `MyInt(1) <> MyString("1")` compiles, but isn't sensible.
+
+---
+
+| F-bounded OO Monoid trait
+
+* An F-bound is a recursive bound on a generic parameter
 
 
+```
+trait Monoid[A :> Monoid[A]] {
+  val id: A
+  def <>(other: A): A
+}
 
-
-
-
-
+case class MyString(s: String) extends Monoid[MyString]{
+  val id: MyString
+  val <>(other: MyString) = Mystring(s + other.s)
+}
