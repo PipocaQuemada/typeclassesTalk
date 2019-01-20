@@ -26,7 +26,7 @@ solve 2 problems for Haskell:
 
 ---
 
-| What do typeclasses look like in Haskell?
+| In Haskell, typeclasses are an actual language feature
 
 class Eq a where
     (==) :: a -> a -> Bool
@@ -40,26 +40,26 @@ member :: Eq a => a -> [a] -> Bool
 
 ---
 
-| What do typeclasses look like in Scala?
+| In Scala, they're just a pattern
+
 ```
 trait Eq[A] {
   def ===(x: A, y: A): Boolean
 }
 
-sealed trait Foo 
-object Foo {
-  implicit val eqInstance = new Eq[Foo] {
-    def ===(x: Foo, y: Foo) = (x, y) match {
-      case (Bar(), Bar()) => true
-      case (Baz(), Baz()) => true
+object BooleanInstances {
+  implicit val eqInstance = new Eq[Boolean] {
+    def ===(x: Boolean, y: Boolean) = (x, y) match {
+      case (true, true) => true
+      case (false, false) => true
       case _ => false
     }
   }
 }
 
-case class Bar() extends Foo
-case class Baz() extends Foo
 
+---
+```
 // Optional, but provides a more natural syntax
 final case class EqOps[A](a: A)(implicit eq: Eq[A]){
   def ===(other: A) = eq.===(a, other)
@@ -69,8 +69,6 @@ object EqSyntax {
 } 
 
  
-val bar: Foo = Bar()
-val baz: Foo = Baz()
 import EqSyntax._
 
 ---
