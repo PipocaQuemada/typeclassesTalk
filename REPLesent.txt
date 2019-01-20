@@ -7,8 +7,10 @@ How to make ad hoc polymorphism less ad hoc
 | What are type classes?
 
 OO's big idea: bundling implementation and data is good 
+ Implementation is found at runtime on the data
 
 Typeclass's big idea: separating implementation from data is good.
+ Implementation is found at compile-time based on the type
 
 ---
 
@@ -44,14 +46,6 @@ trait Eq[A] {
   def ===(x: A, y: A): Boolean
 }
 
-// Optional, but provides a more natural syntax
-final case class EqOps[A](a: A)(implicit eq: Eq[A]){
-  def ===(other: A) = eq.===(a, other)
-}
-object EqSyntax {
-  implicit def eqSyntax[A](x: A)(implicit eq: Eq[A]) = EqOps(x)
-} 
-
 sealed trait Foo 
 object Foo {
   implicit val eqInstance = new Eq[Foo] {
@@ -65,6 +59,15 @@ object Foo {
 
 case class Bar() extends Foo
 case class Baz() extends Foo
+
+// Optional, but provides a more natural syntax
+final case class EqOps[A](a: A)(implicit eq: Eq[A]){
+  def ===(other: A) = eq.===(a, other)
+}
+object EqSyntax {
+  implicit def eqSyntax[A](x: A)(implicit eq: Eq[A]) = EqOps(x)
+} 
+
  
 val bar: Foo = Bar()
 val baz: Foo = Baz()
@@ -83,8 +86,6 @@ import EqSyntax._
 * No need for data to have access to implementation
 
 * Polymorphic values / return type polymorphism
-
-* Avoids F-bounded-polymorphism
 
 ---
 
@@ -113,6 +114,28 @@ Identity means a * i == a == i * a
 examples: (Int, +, 0), (Int, *, 1), (Bool, &&, true), 
 (Bool, ||, false), (Set[A], union, Set.empty), 
 (List[A], ++, List.empty), (a => a, compose, id) 
+
+---
+
+| Naive OO Monoid trait
+
+```
+trait Monoid {
+  val id: Monoid
+  def <>(other:Monoid): Monoid
+}
+
+case class MyString(s: String) extends Monoid {
+  val id: Monoid = MyString("")
+  def <>(other:Monoid): Monoid =
+    other match {
+      case MyString(s2) => MyString(s + s2)
+      case _ => throw new Exception("expected another MyString in <>")
+    }
+}
+
+// Problem: `MyInt(1) <> MyString("1")` compiles, but isn't sensible.
+// You can solve it via `trait Monoid[A extends Monoid[A]]`
 
 ---
 ```
@@ -163,39 +186,10 @@ object MonoidInstances {
 
 ---
 
-| Naive OO Monoid trait
+| Heterogenous collections
+
+* You only ever have one instance for a particular type
+  so typeclasses are bad when you want one instance per value
 
 ```
-trait Monoid {
-  val id: Monoid
-  def <>(other:Monoid): Monoid
-}
-
-case class MyString(s: String) extends Monoid {
-  val id: Monoid = MyString("")
-  def <>(other:Monoid): Monoid =
-    other match {
-      case MyString(s2) => MyString(s + s2)
-      case _ => throw new Exception("expected another MyString in <>")
-    }
-}
-
-// Problem: `MyInt(1) <> MyString("1")` compiles, but isn't sensible.
-
----
-
-| F-bounded OO Monoid trait
-
-* An F-bound is a recursive bound on a generic parameter
-
-
-```
-trait Monoid[A :> Monoid[A]] {
-  val id: A
-  def <>(other: A): A
-}
-
-case class MyString(s: String) extends Monoid[MyString]{
-  val id: MyString
-  val <>(other: MyString) = Mystring(s + other.s)
-}
+def renderAll(objectsToRender: List[A])(implicit r: Render[A])
