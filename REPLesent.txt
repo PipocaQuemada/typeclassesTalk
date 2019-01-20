@@ -71,19 +71,6 @@ object EqSyntax {
  
 import EqSyntax._
 
----
-
-| How does this differ from "normal" OO?
-
-* Retroactive extension of library code
-
-* Conditional implementation of typeclass
-
-* Completely type directed, can be resolved statically
-
-* No need for data to have access to implementation
-
-* Polymorphic values / return type polymorphism
 
 ---
 
@@ -191,3 +178,23 @@ object MonoidInstances {
 
 ```
 def renderAll(objectsToRender: List[A])(implicit r: Render[A])
+
+---
+
+| Recap
+
+How does this differ from "normal" OO?
+
+* Retroactive extension of library code
+
+* Conditional implementation of typeclass
+
+* Completely type directed, can be resolved statically
+
+* No need for data to have access to implementation
+
+* Polymorphic values / return type polymorphism
+
+---
+
+| Questions?
