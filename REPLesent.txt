@@ -56,11 +56,12 @@ object BooleanInstances {
     }
   }
 }
-
-
+import BooleanInstances._
 ---
 ```
-// Optional, but provides a more natural syntax
+// Optional trick for more natural syntax
+// Note, this only has to be written once per typeclass
+
 final case class EqOps[A](a: A)(implicit eq: Eq[A]){
   def ===(other: A) = eq.===(a, other)
 }
@@ -68,19 +69,17 @@ object EqSyntax {
   implicit def eqSyntax[A](x: A)(implicit eq: Eq[A]) = EqOps(x)
 } 
 
- 
 import EqSyntax._
-
 
 ---
 
 | Retroactive extension of library code
 
 In OO, you can't make a library class extend a new interface.
-The best you can do is create a new subclass that implements the interface.
+The best you can do is create a new subclass that implements the interface
+or wrap it in a type that implements the interface.
+Implicit conversions help in Scala, but need to be written once per wrapping type
 
-However, the library won't return values of that subclass, so you'll need to
-do a lot of wrapping.
 
 With typeclasses, you can provide an implementation in the library that defines
 the new typeclass, or in your own application codebase.
@@ -92,7 +91,9 @@ the new typeclass, or in your own application codebase.
 In math, a Monoid is a set S, a closed binary associative operation *, 
 and an identity element i.
 
-Associative means (a + b) + c == a + (b + c)
+A closed binary operation means *: S x S => S
+
+Associative means (a * b) * c == a * (b * c)
 
 Identity means a * i == a == i * a
 
@@ -106,12 +107,12 @@ examples: (Int, +, 0), (Int, *, 1), (Bool, &&, true),
 
 ```
 trait Monoid {
-  val id: Monoid
+  def id: Monoid
   def <>(other:Monoid): Monoid
 }
 
 case class MyString(s: String) extends Monoid {
-  val id: Monoid = MyString("")
+  def id: Monoid = MyString("")
   def <>(other:Monoid): Monoid =
     other match {
       case MyString(s2) => MyString(s + s2)
@@ -119,10 +120,33 @@ case class MyString(s: String) extends Monoid {
     }
 }
 
-// Problem: `MyInt(1) <> MyString("1")` compiles, but isn't sensible.
-// You can solve it via `trait Monoid[A extends Monoid[A]]`
+---
+ There are 3 big problems with this:
+
+* `List(1) <> MyString("1")` compiles, but isn't sensible.
+
+* MyString("1") <> MyString("2") : Monoid
+  - we've essentially upcasted to a nearly useless interface type
+
+* Where do you get id from if you don't have an instance?
+
+```
+   def foldM(list: List[Monoid]) : Monoid =
+    list.fold(???)(_ <> _)
 
 ---
+
+| Correct OO Monoid trait
+```
+trait Monoid[A <: Monoid[A]] {
+  val id: A 
+  def <>(other:A): A
+}
+
+// Solves first two problems, but not the 3rd
+
+---
+| Monoid typeclass
 ```
 trait Monoid[A] {
   val id: A
@@ -130,20 +154,51 @@ trait Monoid[A] {
 }
 
 final case class MonoidOps[A](x: A)(implicit M: Monoid[A]){
-  def <>(y: A) = <>(x, y)
+  def <>(y: A) = M.<>(x, y)
 }
 object MonoidSyntax{
   implicit def monoidSyntax[A](a: A)(implicit M: Monoid[A]) = MonoidOps(a)
+  implicit def id[A](implicit M: Monoid[A]) = M.id
 }
+
+import MonoidSyntax._
 
 ---
 
 | No need for data to have access to implementation
 
 ```
-
-def foldM(list: List[A])(implicit m: Monoid[A]) =
+def foldM[A](list: List[A])(implicit m: Monoid[A]) =
   list.fold(m.id)(_ <> _)
+
+---
+| Multiple implementations
+```
+case class Sum(value: Int)
+case class Mult(value: Int)
+case class Max(value: Int)
+case class Min(value: Int)
+
+object IntMonoids {
+  implicit val sumInstance = new Monoid[Sum] {
+    def <>(x: Sum, y: Sum) = Sum(x.value + y.value)
+    val id = Sum(0)
+  }
+  implicit val multInstance = new Monoid[Mult] {
+    def <>(x: Mult, y: Mult) = Mult(x.value * y.value)
+    val id = Mult(1)
+  }
+  implicit val maxInstance = new Monoid[Max] {
+    def <>(x: Max, y: Max) = Max( Math.max(x.value, y.value) )
+    val id = Max(Int.MinValue)
+  }
+  implicit val minInstance = new Monoid[Min] {
+    def <>(x: Min, y: Min) = Min( Math.min(x.value, y.value) )
+    val id = Min(Int.MaxValue)
+  }
+}
+
+import IntMonoids._
 ---
 
 | Conditional implementation
@@ -151,16 +206,16 @@ def foldM(list: List[A])(implicit m: Monoid[A]) =
 ```
 object MonoidInstances {
 
-  implicit def functionMonoid[A, B](implicit bMonoid: Monoid[B]): new Monoid[A => B] {
-    val id = a => bMonoid.id
-    val <>(x: A => B, y: A => B) = a => <>(x(a), y(a))
+  implicit def functionMonoid[A, B](implicit bM: Monoid[B]) = new Monoid[A => B] {
+    val id = (a: A) => bM.id
+    def <>(x: A => B, y: A => B) = a => x(a) <> y(a)
   }
 
-  implicit def tupleMonoid[A, B](implicit aMonoid: Monoid[A], bMonoid: Monoid[B]) = 
+  implicit def tupleMonoid[A, B](implicit aM: Monoid[A], bM: Monoid[B]) = 
     new Monoid[(A, B)] {
-      val id = (id, id)
+      val id = (aM.id, bM.id)
       def <>(x: (A, B), y: (A, B)) = (x, y) match {
-        case ((xa, xb), (ya, yb)) => (<>(xa, ya), <>(xb, yb))
+        case ((xa, xb), (ya, yb)) => ((xa <> ya), (xb <> yb))
       }
     }
 }
@@ -169,15 +224,20 @@ object MonoidInstances {
 
 | Polymorphic values
 
+
 ---
 
 | Heterogenous collections
 
-* You only ever have one instance for a particular type
-  so typeclasses are bad when you want one instance per value
 
 ```
+// Typeclass approach
+// Notice: only one Render implemetation for every element of the list
 def renderAll(objectsToRender: List[A])(implicit r: Render[A])
+
+// OO approach
+// every element has its own Render implemention
+def renderAll(objectsToRender: List[Renderable])
 
 ---
 
@@ -187,7 +247,9 @@ How does this differ from "normal" OO?
 
 * Retroactive extension of library code
 
-* Conditional implementation of typeclass
+* Use newtypes to control multiple instances in a type directed way
+
+* Conditional implementation of typeclasses
 
 * Completely type directed, can be resolved statically
 
